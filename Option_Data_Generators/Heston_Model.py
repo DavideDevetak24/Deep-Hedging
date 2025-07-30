@@ -9,7 +9,8 @@ T = 1
 N =360
 dt = T/N
 
-mu = 0.10 #to 0 if risk neutral
+r = 0.03
+mu = 0.10 #to mu=r if risk neutral
 kappa = 2
 theta = 0.04
 sigma_v = 0.1 #volatility of volatility
