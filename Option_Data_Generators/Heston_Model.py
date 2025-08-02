@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import math
+from scipy.stats import norm
 
 S0 = 100
 v0 = 0.05
@@ -27,11 +29,6 @@ W_mean = np.array([0,0])
 W_covariance = np.array([[1, rho],
                        [rho,1]])
 
-def sqrt(n):
-    return np.sqrt(n)
-
-def exp(n):
-    return np.exp(n)
 
 for i in range(n_simulations):
     np.random.seed(42+i)
@@ -47,8 +44,8 @@ for i in range(n_simulations):
 
     for j in range(1,N):
         #Euler-Maruyama Discretization
-        v[j] = v[j-1] + kappa * (theta - v[j-1]) * dt + sigma_v * sqrt(max(v[j-1], 0)) * sqrt(dt) * W_v[j-1]
-        S[j] = S[j-1] * exp((mu - 1/2 * v[j-1]) * dt + sqrt(v[j-1]) * sqrt(dt) * W_s[j-1])
+        v[j] = v[j-1] + kappa * (theta - v[j-1]) * dt + sigma_v * np.sqrt(max(v[j-1], 0)) * np.sqrt(dt) * W_v[j-1]
+        S[j] = S[j-1] * np.exp((mu - 1/2 * v[j-1]) * dt + np.sqrt(v[j-1]) * np.sqrt(dt) * W_s[j-1])
 
     data_S[i,:] = S
     data_v[i,:] = v
@@ -75,5 +72,21 @@ plt.grid()
 
 plt.tight_layout()
 plt.show()
+
+
+
+def black_scholes(S, K, r, T, IV, q, option_type='Call'):
+    d1 = (np.log(S / K) + (r - q + (IV**2 / 2)) * T) / ( IV* np.sqrt(T))
+    d2 = (np.log(S / K) + (r - q - (IV**2 / 2)) * T) / (IV * np.sqrt(T))
+
+    if option_type == 'Call':
+        call = (S * np.exp(-q * T) * norm.cdf(d1)) - (K * np.exp(-r * T) * norm.cdf(d2))
+        return call
+    if option_type == 'Put':        
+        put = (K * np.exp(-r * T) * norm.cdf(-d2)) - (S * np.exp(-q * T) * norm.cdf(-d1))
+        return put
+    else:
+        print('Wrong option type: choose between "Call" and "Put"')
+
 
 
