@@ -12,9 +12,9 @@ dt = T/N
 
 r = 0.03
 mu = 0 #to mu=r if risk neutral, here i use driftless generator
-alpha = 1
-b = 0.04
-sigma_v = 2 #volatility of volatility
+kappa = 1
+theta = 0.04
+sigma_v = 0.02 #volatility of volatility
 rho = 0.7 #corr of BMs
 
 n_simulations = 100
@@ -43,9 +43,8 @@ for i in range(n_simulations):
 
     for j in range(1,N):
         #Euler-Maruyama Discretization
-        v[j] = v[j-1] + alpha * (b - v[j-1]) * dt + sigma_v * np.sqrt(max(v[j-1], 0)) * np.sqrt(dt) * W_v[j-1]
+        v[j] = v[j-1] + kappa * (theta - v[j-1]) * dt + sigma_v * np.sqrt(max(v[j-1], 0)) * np.sqrt(dt) * W_v[j-1]
         S[j] = S[j-1] * np.exp((mu - 1/2 * v[j-1]) * dt + np.sqrt(v[j-1]) * np.sqrt(dt) * W_s[j-1])
-
     data_S[i,:] = S
     data_v[i,:] = v
 
@@ -71,4 +70,7 @@ plt.grid()
 
 plt.tight_layout()
 plt.show()
+
+
+
 
