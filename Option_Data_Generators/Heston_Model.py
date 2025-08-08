@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import math
 from scipy.stats import norm
 
 S0 = 100
@@ -12,7 +11,7 @@ N = 360
 dt = T/N
 
 r = 0.03
-mu = 0.10 #to mu=r if risk neutral
+mu = 0 #to mu=r if risk neutral, here i use driftless generator
 kappa = 2
 theta = 0.04
 sigma_v = 0.1 #volatility of volatility
@@ -72,21 +71,4 @@ plt.grid()
 
 plt.tight_layout()
 plt.show()
-
-
-
-def black_scholes(S, K, r, T, IV, q, option_type='Call'):
-    d1 = (np.log(S / K) + (r - q + (IV**2 / 2)) * T) / ( IV* np.sqrt(T))
-    d2 = (np.log(S / K) + (r - q - (IV**2 / 2)) * T) / (IV * np.sqrt(T))
-
-    if option_type == 'Call':
-        call = (S * np.exp(-q * T) * norm.cdf(d1)) - (K * np.exp(-r * T) * norm.cdf(d2))
-        return call
-    if option_type == 'Put':        
-        put = (K * np.exp(-r * T) * norm.cdf(-d2)) - (S * np.exp(-q * T) * norm.cdf(-d1))
-        return put
-    else:
-        print('Wrong option type: choose between "Call" and "Put"')
-
-
 
