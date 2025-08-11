@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import norm
 
 S0 = 100
 v0 = 0.04
@@ -19,7 +18,6 @@ rho = 0.7 #corr of BMs
 
 n_simulations = 100
 
-
 data_S = np.zeros((n_simulations, N))
 data_v = np.zeros((n_simulations, N))
 t = np.linspace(0, T, N)
@@ -27,7 +25,6 @@ t = np.linspace(0, T, N)
 W_mean = np.array([0,0])
 W_covariance = np.array([[1, rho],
                        [rho,1]])
-
 
 for i in range(n_simulations):
     np.random.seed(42+i)
@@ -52,6 +49,7 @@ data_S = pd.DataFrame(data_S).T
 data_v = pd.DataFrame(data_v).T
 
 
+# Plot simulated paths
 plt.figure(figsize=(12, 12))
 
 plt.subplot(2, 1, 1)
@@ -72,5 +70,19 @@ plt.tight_layout()
 plt.show()
 
 
+# Saving Data for the model
+df_S = data_S.melt(ignore_index=False, var_name='n_sim_S', value_name='S')
+df_v = data_v.melt(ignore_index=False, var_name='n_sim_v', value_name='v')
+
+df_S.reset_index(inplace=True)
+df_v.reset_index(inplace=True)
+
+df_long = pd.merge(df_S, df_v, left_index=True, right_index=True)
+df_long.drop(['n_sim_S', 'index_x'], axis=1, inplace=True)
+
+df_long.rename(columns={'n_sim_v': 'n_sim', 'index_y': 'time'}, inplace=True)
+df_long = df_long[['n_sim', 'time', 'S', 'v']]
+
+df_long.to_parquet("Data/Data.parquet")
 
 
