@@ -27,7 +27,6 @@ class HedgingDataset(Dataset):
     def __getitem__(self, idx):
         return self.paths[idx]
 
-
 df = HedgingDataset(df_long)
 #try to add max -1 cpu cell usage
 loader = DataLoader(df, batch_size=len(df), shuffle=True)
@@ -44,6 +43,14 @@ test_loader = DataLoader(df_test, batch_size=10, shuffle=False)
 
 
 # Def for loss and objective functions
+
+def eur_call_payoff(S_T, strike=100):
+    return torch.clamp(S_T - float(strike), min=0.0)
+
+
+
+
+
 
 
 
