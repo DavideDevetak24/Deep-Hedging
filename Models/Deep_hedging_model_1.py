@@ -58,13 +58,13 @@ Def for loss and objective functions
 def eur_call_payoff(S_T, strike=100):
     return torch.clamp(S_T - float(strike), min=0.0)
 
-def compute_delta_dot_S(delta, S_seq):
+def comp_delta_dot_S(delta, S_seq):
     assert S_seq.shape[1] == delta.shape[1] + 1, "S_seq one more timestep than delta"
     price_diff = S_seq[:, 1:, :] - S_seq[:, :-1, :]   # [batch, T, d], difference along T axis
     hedge_gains = (delta * price_diff).sum(dim=(1, 2))  # sum over time and instruments
     return hedge_gains  # return [batch]
 
-def compute_transaction_costs(delta, S_seq_at_trade, cost_rate=0.0):
+def comp_transaction_costs(delta, S_seq_at_trade, cost_rate=0.0):
     """
     Proportional costs
     returns: tensor [batch] total cost per path
