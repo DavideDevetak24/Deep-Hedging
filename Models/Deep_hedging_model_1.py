@@ -4,6 +4,13 @@ import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 
+
+"""
+Dataset Setup
+
+"""
+
+
 # Dataset setup for Pytorch nn model
 df_long = pd.read_parquet('Data/Data.parquet')
 
@@ -42,11 +49,45 @@ val_loader = DataLoader(df_val, batch_size=10, shuffle=False)
 test_loader = DataLoader(df_test, batch_size=10, shuffle=False)
 
 
-# Def for loss and objective functions
+
+"""
+Def for loss and objective functions
+
+"""
 
 def eur_call_payoff(S_T, strike=100):
     return torch.clamp(S_T - float(strike), min=0.0)
 
+def compute_delta_dot_S(delta, S_seq):
+    assert S_seq.shape[1] == delta.shape[1] + 1, "S_seq one more timestep than delta"
+    price_diff = S_seq[:, 1:, :] - S_seq[:, :-1, :]   # [batch, T, d], difference along T axis
+    hedge_gains = (delta * price_diff).sum(dim=(1, 2))  # sum over time and instruments
+    return hedge_gains  # return [batch]
+
+def compute_transaction_costs(delta, S_seq_at_trade, cost_rate=0.0):
+    """
+    Proportional costs
+    returns: tensor [batch] total cost per path
+    """
+    if float(cost_rate) == 0.0:
+        return torch.zeros(delta.shape[0], device=delta.device, dtype=delta.dtype)
+
+    # previous positions (delta_{-1}=0)
+    delta_prev = torch.zeros_like(delta)
+    delta_prev[:, 1:, :] = delta[:, :-1, :]
+
+    trades = delta - delta_prev    # [batch, T, d]
+    abs_trades = trades.abs()
+
+    # ensure cost_rate is a tensor shaped (d,)
+    if torch.is_tensor(cost_rate):
+        cr = cost_rate.view(1, 1, -1).to(delta.device).type_as(delta)
+    else:
+        cr = float(cost_rate)
+
+    # cost per element and sum
+    costs = (abs_trades * S_seq_at_trade * cr).sum(dim=(1, 2))  # [batch]
+    return costs # retruns [batch]
 
 
 
