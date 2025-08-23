@@ -9,8 +9,6 @@ from torch.utils.data import Dataset, DataLoader, random_split
 Dataset Setup
 
 """
-
-
 # Dataset setup for Pytorch nn model
 df_long = pd.read_parquet('Data/Data.parquet')
 
@@ -54,7 +52,6 @@ test_loader = DataLoader(df_test, batch_size=10, shuffle=False)
 Def for loss and objective functions
 
 """
-
 def eur_call_payoff(S_T, strike=100):
     return torch.clamp(S_T - float(strike), min=0.0)
 
@@ -69,25 +66,33 @@ def comp_transaction_costs(delta, S_seq_at_trade, cost_rate=0.0):
     Proportional costs
     returns: tensor [batch] total cost per path
     """
-    if float(cost_rate) == 0.0:
-        return torch.zeros(delta.shape[0], device=delta.device, dtype=delta.dtype)
-
+    # both tensor and float for cost_rate
+    if not torch.is_tensor(cost_rate):
+        if float(cost_rate) == 0.0:
+            return torch.zeros(delta.shape[0], device=delta.device, dtype=delta.dtype)
+    else:
+        if torch.all(cost_rate == 0):
+            return torch.zeros(delta.shape[0], device=delta.device, dtype=delta.dtype)
+   
     # previous positions (delta_{-1}=0)
     delta_prev = torch.zeros_like(delta)
     delta_prev[:, 1:, :] = delta[:, :-1, :]
 
-    trades = delta - delta_prev    # [batch, T, d]
+    trades = delta - delta_prev               # [batch, T, d]
     abs_trades = trades.abs()
 
-    # ensure cost_rate is a tensor shaped (d,)
+    # takes both tensor and float argument for costs, shaped tensor [,d]
     if torch.is_tensor(cost_rate):
         cr = cost_rate.view(1, 1, -1).to(delta.device).type_as(delta)
     else:
         cr = float(cost_rate)
 
     # cost per element and sum
-    costs = (abs_trades * S_seq_at_trade * cr).sum(dim=(1, 2))  # [batch]
-    return costs # retruns [batch]
+    costs = (abs_trades * S_seq_at_trade * cr).sum(dim=(1, 2))  # [batch], sum over dim 1 and 2 (T and d)
+    return costs
+
+
+
 
 
 
