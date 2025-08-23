@@ -52,8 +52,21 @@ test_loader = DataLoader(df_test, batch_size=10, shuffle=False)
 Def for loss and objective functions
 
 """
-def eur_call_payoff(S_T, strike=100):
+def eur_call_payoff(S_seq, strike=100):
+    S_T = S_seq[:, -1, 0]
     return torch.clamp(S_T - float(strike), min=0.0)
+
+def eur_put_payoff(S_seq, strike=100):
+    S_T = S_seq[:, -1, 0]
+    return torch.clamp(float(strike) - S_T, min=0.0)
+
+def lookback_call_payoff(S_seq, strike=100):
+    S_max = S_seq.max(dim=1).values[:,0]  # max over time, return batch size
+    return torch.clamp(S_max - float(strike), min=0.0)
+
+def asian_call_payoff(S_seq, strike=100):
+    S_avg = S_seq.mean(dim=1)[:,0]
+    return torch.clamp(S_avg - float(strike), min=0.0)
 
 def comp_delta_dot_S(delta, S_seq):
     assert S_seq.shape[1] == delta.shape[1] + 1, "S_seq one more timestep than delta"
@@ -91,7 +104,21 @@ def comp_transaction_costs(delta, S_seq_at_trade, cost_rate=0.0):
     costs = (abs_trades * S_seq_at_trade * cr).sum(dim=(1, 2))  # [batch], sum over dim 1 and 2 (T and d)
     return costs
 
+def comp_PL_T_of_delta(delta, S_seq, payoff_fn=None, payoff_kwargs=None, cost_rate=0.0, p0=0.0):
+    batch = S_seq.shape[0]
+    device = S_seq.device
+    dtype = S_seq.dtype
 
+    if payoff_fn is None:
+        Z = torch.zeros(batch, device=device, dtype=dtype)
+    else:
+        Z = payoff_fn(S_seq, **(payoff_kwargs or {})) # use full path
+        Z = Z.type_as(S_seq)
+
+    delta_dot_s = comp_delta_dot_S(delta, S_seq)
+    costs = comp_transaction_costs(delta, S_seq[:, :-1, :], cost_rate=cost_rate)
+    pl = -Z + float(p0) + delta_dot_s - costs
+    return pl
 
 
 
