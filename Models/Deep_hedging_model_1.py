@@ -128,6 +128,7 @@ def comp_PL_T_of_delta(delta, S_seq, payoff_fn=None, payoff_kwargs=None, cost_ra
 """
 Hedging Model (Semi-recurrent hedging model)
 Following setup Buhler & Teichmann
+(Using only S_k and delta_{k-1} as features, in further models I'll use also v_k)
 
 """
 class HedgingNeuralNetwork(nn.Module):
@@ -145,6 +146,80 @@ class HedgingNeuralNetwork(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, S_seq):
+        B, Tplus1, d = S_seq.shape
+        T = Tplus1 - 1
+        assert d == self.n_assets
+
+        delta_seq = []
+        delta_prev = torch.zeros(B, d, device=S_seq.device, dtype=S_seq.dtype)
+
+        for k in range(T):
+            S_k = S_seq[:,k,:] # [B,d]
+            input = torch.cat([S_k, delta_prev], dim=-1) # [B,2d]
+            delta_k = self.net(input) # [B,d]
+            delta_seq.append(delta_k)
+            delta_prev = delta_k
+
+        delta = torch.stack(delta_seq, dim=1)   # [B,T,d]
+        return delta
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# To see if everything works
+
+#device = torch.device("cpu")
+
+# get only one batch (basically I break the cycle)
+for S, v in train_loader:
+    # S: list-> because random_split returns Subset; collate should give tensors if same lengths
+    # but with DataLoader over Subset we get (batch, T+1, 1). If not, adapt accordingly.
+    # Move to device and ensure dtype
+    S = S.to(device)
+    v = v.to(device)
+    break
+
+# test_costs.py (run in same notebook where train_loader exists)
+
+B, Tplus1, d = S.shape
+T = Tplus1 - 1
+d = d  # usually 1
+
+# dummy delta: zeros (no hedging)
+delta = torch.zeros(B, T, d, dtype=S.dtype, device=device)
+
+
+# compute payoff Z as European call strike=100
+Z = eur_call_payoff(S, strike=100.0)  # [batch]
+
+pl = comp_PL_T_of_delta(delta, S, payoff_fn=eur_call_payoff, payoff_kwargs={'strike':100.0}, cost_rate=0.0)
+print("Shapes -> S:", S.shape, "delta:", delta.shape, "Z:", Z.shape, "PL:", pl.shape)
+print("PL sample:", pl)
+
+
+# basically should retun [batch] with values -Z (considring delta = 0 for delta dim [B,T,d])
+
+print(f"Shapes: batch={B}, T+1={Tplus1}, d={d}")
+
+# init model
+layer_size = d+15
+model = HedgingNeuralNetwork(n_assets=d, layer_size=layer_size, n_layers=2).to(device)
+
+# forward pass
+delta = model(S)
+print("Output delta shape:", delta.shape)  # expect [B, T, d]
+
+
 
     
 
