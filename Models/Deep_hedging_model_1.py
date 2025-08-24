@@ -126,9 +126,30 @@ def comp_PL_T_of_delta(delta, S_seq, payoff_fn=None, payoff_kwargs=None, cost_ra
 
 
 """
-Hedging Model
+Hedging Model (Semi-recurrent hedging model)
+Following setup Buhler & Teichmann
 
 """
+class HedgingNeuralNetwork(nn.Module):
+    def __init__(self, n_assets, layer_size=16, n_layers=2):
+        super().__init__()
+        self.n_assets = n_assets
+
+        input_dim = n_assets * 2
+        # nn.Linear(input_size, output_size)
+        layers = [nn.Linear(input_dim, layer_size), nn.ReLU()]
+        for _ in range(n_layers):
+            layers += [nn.Linear(layer_size, layer_size), nn.ReLU()]
+        layers.append(nn.Linear(layer_size, n_assets)) # output n_asset which is d in the paper
+        
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, S_seq):
+
+    
+
+
+
 
 
 
