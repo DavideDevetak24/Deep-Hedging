@@ -2,8 +2,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
 
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+print(device)
 
 """
 Dataset Setup
@@ -119,6 +123,12 @@ def comp_PL_T_of_delta(delta, S_seq, payoff_fn=None, payoff_kwargs=None, cost_ra
     costs = comp_transaction_costs(delta, S_seq[:, :-1, :], cost_rate=cost_rate)
     pl = -Z + float(p0) + delta_dot_s - costs
     return pl
+
+
+"""
+Hedging Model
+
+"""
 
 
 
