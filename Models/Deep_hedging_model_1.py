@@ -165,6 +165,10 @@ class HedgingNeuralNetwork(nn.Module):
         return delta
 
 
+"""
+Convex Risk Measures
+"""
+
 class EntropicLoss(nn.Module):
     """
     rho_ent(pl) = (1/lambda) * log E[ exp(-lambda * pl) ]
