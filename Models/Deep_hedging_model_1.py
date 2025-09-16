@@ -128,7 +128,8 @@ def comp_PL_T_of_delta(delta, S_seq, payoff_fn=None, payoff_kwargs=None, cost_ra
 """
 Hedging Model (Semi-recurrent hedging model)
 Following setup Buhler & Teichmann
-(Using only S_k and delta_{k-1} as features, in further models I'll use also v_k)
+(Using only S_k and delta_{k-1} as features, in further models I'll use also v_k,
+that's why n_assets*2 and not *3)
 
 """
 class HedgingNeuralNetwork(nn.Module):
@@ -164,7 +165,20 @@ class HedgingNeuralNetwork(nn.Module):
         return delta
 
 
+class EntropicLoss(nn.Module):
+    """
+    rho_ent(pl) = (1/lambda) * log E[ exp(-lambda * pl) ]
+    Minimize rho_ent(pl). Lower is better.
+    """
+    def __init__(self, lam: float = 1.0):
+        super().__init__()
+        self.lam = float(lam)
 
+    def forward(self, pl: torch.Tensor) -> torch.Tensor:
+        # pl: [batch]
+        x = -self.lam * pl
+        m = torch.max(x)       # makes computation safe otherwise kaboom (ensures training don't blow up)
+        return (torch.log(torch.mean(torch.exp(x - m))) + m) / self.lam
 
 
 
