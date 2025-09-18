@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, random_split
+from torch.optim import Adam
 
 device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 print(device)
@@ -173,16 +174,37 @@ class EntropicLoss(nn.Module):
     """
     rho_ent(pl) = (1/lambda) * log E[ exp(-lambda * pl) ]
     Minimize rho_ent(pl). Lower is better.
+    Input PL, batch size, output scalar
     """
     def __init__(self, lam: float = 1.0):
         super().__init__()
         self.lam = float(lam)
 
-    def forward(self, pl: torch.Tensor) -> torch.Tensor:
+    def forward(self, pl):
         # pl: [batch]
         x = -self.lam * pl
         m = torch.max(x)       # makes computation safe otherwise kaboom (ensures training don't blow up)
         return (torch.log(torch.mean(torch.exp(x - m))) + m) / self.lam
+    
+
+class CVaRLoss(nn.Module):
+    def __init__(self, alpha: float = 0.05, init_w: float = 0.0, learn_w: bool = True):
+        super().__init__()
+        self.alpha = float(alpha)
+        if learn_w == True:
+            self.w = nn.Parameter(torch.tensor(float(init_w)))
+        else:
+            self.register_buffer("w", torch.tensor(float(init_w)))       
+
+    def forward(self, pl):
+        return (self.w + (1.0 / (1.0 - self.alpha))*torch.mean(torch.clamp(pl - self.w, min=0.0)))
+    
+
+
+
+
+
+
 
 
 
