@@ -133,21 +133,21 @@ Following setup Buhler & Teichmann
 that's why n_assets*2 and not *3)
 
 """
-class HedgingNeuralNetwork(nn.Module):
-    def __init__(self, n_assets, layer_size=16, n_layers=2):
+class HedgingModel(nn.Module):
+    def __init__(self, n_assets, hidden_size=16, n_hidden=2, n_features=2):
         super().__init__()
         self.n_assets = n_assets
+        self.n_features = n_features
 
-        input_dim = n_assets * 2
-        # nn.Linear(input_size, output_size)
-        layers = [nn.Linear(input_dim, layer_size), nn.ReLU()]
-        for _ in range(n_layers):
-            layers += [nn.Linear(layer_size, layer_size), nn.ReLU()]
-        layers.append(nn.Linear(layer_size, n_assets)) # output n_asset which is d in the paper
+        input_dim = n_assets * n_features
+        layers = [nn.Linear(input_dim, hidden_size), nn.ReLU()]  # nn.Linear(input_size, output_size)
+        for _ in range(n_hidden):
+            layers += [nn.Linear(hidden_size, hidden_size), nn.ReLU()]
+        layers.append(nn.Linear(hidden_size, n_assets)) # output n_asset which is d in the paper
         
         self.net = nn.Sequential(*layers)
 
-    def forward(self, S_seq):
+    def forward(self, S_seq, v_seq):
         B, Tplus1, d = S_seq.shape
         T = Tplus1 - 1
         assert d == self.n_assets
@@ -155,12 +155,23 @@ class HedgingNeuralNetwork(nn.Module):
         delta_seq = []
         delta_prev = torch.zeros(B, d, device=S_seq.device, dtype=S_seq.dtype)
 
-        for k in range(T):
-            S_k = S_seq[:,k,:] # [B,d]
-            input = torch.cat([S_k, delta_prev], dim=-1) # [B,2d]
-            delta_k = self.net(input) # [B,d]
-            delta_seq.append(delta_k)
-            delta_prev = delta_k
+        if self.n_features == 2:
+            for k in range(T):
+                S_k = S_seq[:,k,:] # [B,d]
+                input = torch.cat([S_k, delta_prev], dim=-1) # [B,2d]  # to add v_k change here and add v_k
+                delta_k = self.net(input) # [B,d]
+                delta_seq.append(delta_k)
+                delta_prev = delta_k
+        elif self.n_features == 3:
+            for k in range(T):
+                S_k = S_seq[:,k,:] # [B,d]
+                v_k = v_seq[:, k, :] 
+                input = torch.cat([S_k, v_k, delta_prev], dim=-1) # [B,3d]
+                delta_k = self.net(input) # [B,d]
+                delta_seq.append(delta_k)
+                delta_prev = delta_k
+        else:
+            print(f'n_features must be 2 or 3, not {self.n_features}')
 
         delta = torch.stack(delta_seq, dim=1)   # [B,T,d]
         return delta
@@ -197,24 +208,105 @@ class CVaRLoss(nn.Module):
             self.register_buffer("w", torch.tensor(float(init_w)))       
 
     def forward(self, pl):
-        return (self.w + (1.0 / (1.0 - self.alpha))*torch.mean(torch.clamp(pl - self.w, min=0.0)))
+        return (self.w + (1.0 / (1.0 - self.alpha)) * torch.mean(torch.clamp(pl - self.w, min=0.0)))
     
 
 
+"""
+Model Training
+"""
+
+def train_one_epoch(model, loader, loss_fn, optimizer, cost_rate=0.0, strike=100.0, device="cpu"):
+    model.train()
+    running = 0.0
+    n = 0
+    for S, v in loader:
+        # S, v: [batch, T+1, d]
+        S = S.to(device)
+        v = v.to(device)
+
+        # forward: delta shape [batch, T, d]
+        delta = model(S, v)
+
+        # P&L (p0=0 during training)
+        pl = comp_PL_T_of_delta(
+            delta=delta,
+            S_seq=S,
+            payoff_fn=eur_call_payoff,
+            payoff_kwargs={"strike": strike},
+            cost_rate=cost_rate,
+            p0=0.0
+        )  # [batch]
+
+        loss = loss_fn(pl)
+
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+
+        running += loss.item() * S.size(0)
+        n += S.size(0)
+    return running / max(n, 1)
+
+
+@torch.no_grad()
+def evaluate(model, loader, loss_fn, cost_rate=0.0, strike=100.0, device="cpu"):
+    model.eval()
+    running = 0.0
+    n = 0
+    for S, v in loader:
+        S = S.to(device)
+        v = v.to(device)
+
+        delta = model(S, v)
+
+        pl = comp_PL_T_of_delta(
+            delta=delta,
+            S_seq=S,
+            payoff_fn=eur_call_payoff,
+            payoff_kwargs={"strike": strike},
+            cost_rate=cost_rate,
+            p0=0.0
+        )
+        loss = loss_fn(pl)
+        running += loss.item() * S.size(0)
+        n += S.size(0)
+    return running / max(n, 1)
+
+
+def main(train_loader, val_loader, n_assets: int, epochs=20,
+         hidden_size=16, n_hidden=2, n_features=2, lr=1e-3,
+         use_entropic=True, lam=1.0, alpha=0.95,
+         cost_rate=0.0, strike=100.0, device="cpu"):
+
+    device = torch.device(device)
+    model = HedgingModel(n_assets=n_assets, hidden_size=hidden_size, n_hidden=n_hidden, n_features=n_features).to(device)
+
+    if use_entropic:
+        loss_fn = EntropicLoss(lam=lam)
+        opt_params = list(model.parameters())
+    else:
+        loss_fn = CVaRLoss(alpha=alpha, init_w=0.0, learn_w=True)
+        # include w parameter in optimizer
+        opt_params = list(model.parameters()) + list(loss_fn.parameters())
+
+    optimizer = Adam(opt_params, lr=lr)
+
+    for epoch in range(1, epochs + 1):
+        tr = train_one_epoch(model, train_loader, loss_fn, optimizer,
+                             cost_rate=cost_rate, strike=strike, device=device)
+        va = evaluate(model, val_loader, loss_fn,
+                      cost_rate=cost_rate, strike=strike, device=device)
+        print(f"Epoch {epoch:03d} | train loss: {tr:.6f} | val loss: {va:.6f}")
+
+    return model, loss_fn
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+"""
+Intermediate check
+"""
 
 # To see if everything works
 
@@ -236,33 +328,55 @@ T = Tplus1 - 1
 d = d  # usually 1
 
 # dummy delta: zeros (no hedging)
-delta = torch.zeros(B, T, d, dtype=S.dtype, device=device)
+# delta = torch.zeros(B, T, d, dtype=S.dtype, device=device)
 
 
-# compute payoff Z as European call strike=100
-Z = eur_call_payoff(S, strike=100.0)  # [batch]
+# # compute payoff Z as European call strike=100
+# Z = eur_call_payoff(S, strike=100.0)  # [batch]
 
-pl = comp_PL_T_of_delta(delta, S, payoff_fn=eur_call_payoff, payoff_kwargs={'strike':100.0}, cost_rate=0.0)
-print("Shapes -> S:", S.shape, "delta:", delta.shape, "Z:", Z.shape, "PL:", pl.shape)
-print("PL sample:", pl)
-
-
-# basically should retun [batch] with values -Z (considring delta = 0 for delta dim [B,T,d])
-
-print(f"Shapes: batch={B}, T+1={Tplus1}, d={d}")
-
-# init model
-layer_size = d+15
-model = HedgingNeuralNetwork(n_assets=d, layer_size=layer_size, n_layers=2).to(device)
-
-# forward pass
-delta = model(S)
-print("Output delta shape:", delta.shape)  # expect [B, T, d]
+# pl = comp_PL_T_of_delta(delta, S, payoff_fn=eur_call_payoff, payoff_kwargs={'strike':100.0}, cost_rate=0.0)
+# print("Shapes -> S:", S.shape, "delta:", delta.shape, "Z:", Z.shape, "PL:", pl.shape)
+# print("PL sample:", pl)
 
 
+# # basically should retun [batch] with values -Z (considring delta = 0 for delta dim [B,T,d])
 
-    
+# print(f"Shapes: batch={B}, T+1={Tplus1}, d={d}")
 
+# # init model
+# hidden_size = d+15
+# model = HedgingModel(n_assets=d, hidden_size=hidden_size, n_hidden=2, n_features=3).to(device)
+
+# # forward pass
+# delta = model(S,v)
+# print("Output delta shape:", delta.shape)  # expect [B, T, d]
+
+
+
+
+"""
+Train Loop
+"""
+
+n_assets = d  # need to change to be dependent on loaders and assets used
+
+
+model, loss_fn = main(
+    train_loader=train_loader,
+    val_loader=val_loader,
+    n_assets=n_assets,
+    epochs=20,
+    hidden_size=128,
+    n_hidden=2,
+    n_features=3,
+    lr=1e-3,
+    use_entropic=True,   # set True for entropic, False to for CVaR
+    lam=1.0,
+    alpha=0.95,
+    cost_rate=0.0,       # try >0 later (e.g., 0.001)
+    strike=100.0,
+    device="cpu"
+)
 
 
 
